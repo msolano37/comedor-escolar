@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Comedor Escolar - QR</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background-color: #f4f4f4; }
+        #reader { width: 100%; max-width: 500px; margin: auto; }
+        .btn { padding: 10px 20px; margin: 10px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; }
+        .log-container { margin-top: 20px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .alerta { color: red; font-weight: bold; }
+        .exito { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Restaurante Escolar - Control de Acceso</h1>
+    
+    <div id="reader"></div>
+    <div id="resultado" class="log-container">
+        <p>Esperando lectura de código...</p>
+    </div>
+
+    <hr>
+
+    <button class="btn" onclick="limpiarRegistrosDiarios()">Restaurar Ingresos (Nuevo Día)</button>
+    <button class="btn" onclick="exportarAsistencia()" style="background:#007bff;">Exportar Asistencias (CSV)</button>
+
+    <script>
+        // Estructura de datos para asistencias: { "id_estudiante": "timestamp" }
+        let asistenciasHoy = JSON.parse(localStorage.getItem('asistencias')) || {};
+        let listaAsistidosExportar = JSON.parse(localStorage.getItem('registro_total')) || [];
+
+        function onScanSuccess(decodedText) {
+            // Suponemos que el QR tiene el formato: "Nombre|Grado|Estado"
+            const datos = decodedText.split('|');
+            if (datos.length < 3) {
+                document.getElementById('resultado').innerHTML = "<p class='alerta'>Código QR no válido.</p>";
+                return;
+            }
+
+            const [nombre, grado, estado] = datos;
+            const idEstudiante = nombre + grado; // ID único simple
+
+            if (asistenciasHoy[idEstudiante]) {
+                document.getElementById('resultado').innerHTML = `
+                    <p class='alerta'>¡ERROR! ${nombre} ya reclamó su almuerzo hoy a las ${asistenciasHoy[idEstudiante]}.</p>
+                `;
+            } else {
+                const horaActual = new Date().toLocaleTimeString();
+                asistenciasHoy[idEstudiante] = horaActual;
+                
+                // Guardar para exportar
+                listaAsistidosExportar.push({ nombre, grado, estado, hora: horaActual, fecha: new Date().toLocaleDateString() });
+                
+                // Persistencia en el navegador
+                localStorage.setItem('asistencias', JSON.stringify(asistenciasHoy));
+                localStorage.setItem('registro_total', JSON.stringify(listaAsistidosExportar));
+
+                document.getElementById('resultado').innerHTML = `
+                    <div class="exito">
+                        <h3>INGRESO REGISTRADO</h3>
+                        <p>Estudiante: ${nombre}</p>
+                        <p>Grado: ${grado}</p>
+                        <p>Estado: ${estado}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function limpiarRegistrosDiarios() {
+            if(confirm("¿Estás seguro de que quieres reiniciar el día? Esto permitirá que los estudiantes pasen de nuevo.")) {
+                asistenciasHoy = {};
+                localStorage.setItem('asistencias', JSON.stringify(asistenciasHoy));
+                alert("Registros diarios limpiados.");
+            }
+        }
+
+        function exportarAsistencia() {
+            let csvContent = "data:text/csv;charset=utf-8,Nombre,Grado,Estado,Hora,Fecha\n";
+            listaAsistidosExportar.forEach(r => {
+                csvContent += `${r.nombre},${r.grado},${r.estado},${r.hora},${r.fecha}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "asistencia_restaurante.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        // Variable para controlar el escáner
+			let html5QrCode;
+
+			async function iniciarEscaneo() {
+			html5QrCode = new Html5Qrcode("reader");
+			const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+		try {
+			// Intentamos usar la cámara trasera por defecto (ideal para celulares)
+			await html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            onScanSuccess
+			);
+			} catch (err) {
+			// Si falla la trasera (como en portátiles), usamos la cámara disponible
+			console.error("Error iniciando cámara trasera, probando default:", err);
+			await html5QrCode.start(
+            { facingMode: "user" }, 
+            config, 
+            onScanSuccess
+			).catch(error => {
+            alert("Error: No se pudo acceder a la cámara. Asegúrate de dar permisos.");
+			});
+    }
+}
+
+// Llamar a la función automáticamente al cargar
+window.onload = iniciarEscaneo;
+    </script>
+</body>
+</html>
